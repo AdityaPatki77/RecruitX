@@ -1,0 +1,77 @@
+:root {
+  --bg: #000000;
+  --panel: #222222;
+  --card: #333333;
+  --accent: #FFAC41;
+  --text: #ffffff;
+  --muted: #9ca3af;
+  --border: #4a4a4a;
+  --input-bg: #2b2b2b;
+  --input-color: #fff;
+  --btn-secondary-color: #fff;
+  --btn-role-bg: #1a1a1a;
+  --body-bg-start: #1c1c1c;
+  --body-bg-end: #000;
+}
+
+[data-theme="light"] {
+  --bg: #f5f5f5;
+  --panel: #ffffff;
+  --card: #ffffff;
+  --accent: #d97706;
+  --text: #000000;
+  --muted: #4b5563;
+  --border: #d1d5db;
+  --input-bg: #ffffff;
+  --input-color: #000000;
+  --btn-secondary-color: #000000;
+  --btn-role-bg: #e5e7eb;
+  --body-bg-start: #f5f5f5;
+  --body-bg-end: #f5f5f5;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at center, var(--body-bg-start), var(--body-bg-end));
+  color: var(--text);
+  font-family: "Inter", sans-serif;
+  transition: background 0.3s, color 0.3s;
+}
+
+input {
+  width: 100%;
+  padding: 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--input-color);
+  margin-bottom: 16px;
+  transition: background 0.3s, border-color 0.3s, color 0.3s;
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--btn-secondary-color);
+}
+
+button.role {
+  flex: 1;
+  background: var(--btn-role-bg);
+  border: 1px solid var(--border);
+}
+
+button.role.active {
+  border-color: var(--accent);
+  background: rgba(255, 172, 65, 0.15);
+}
