@@ -9,10 +9,10 @@ import {
 } from "../components/Icons";
 
 /* ─── renders a parsed resume section as nicely formatted text ─── */
-const ResumeSection = ({ text, emptyMsg }) => {
+const ResumeSection = ({ text, emptyMsg, icon: Icon }) => {
   if (!text || !text.trim()) return <p style={s.cardEmpty}>{emptyMsg}</p>;
   return (
-    <div style={s.sectionText}>
+    <div style={s.sectionContainer}>
       {text.split("\n").map((line, i) => {
         const isBullet = line.trimStart().startsWith("• ");
         const content = isBullet ? line.trimStart().slice(2) : line;
@@ -25,8 +25,12 @@ const ResumeSection = ({ text, emptyMsg }) => {
             </div>
           );
         }
-        // Non-bullet line = project / internship title
-        return <p key={i} style={s.sectionTitle}>{content}</p>;
+        return (
+          <div key={i} style={s.itemHeader}>
+            {Icon && <Icon size={14} color="#818cf8" style={{ marginTop: "2px" }} />}
+            <span style={s.sectionTitle}>{content}</span>
+          </div>
+        );
       })}
     </div>
   );
@@ -68,6 +72,9 @@ export default function StudentDashboard() {
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState("profile"); // "profile" | "applications"
+  const [myApps, setMyApps] = useState([]);
+  const [appsLoading, setAppsLoading] = useState(false);
 
   // parser
   const [parseFile, setParseFile] = useState(null);
@@ -80,6 +87,16 @@ export default function StudentDashboard() {
       if (res.data) { setProfile(res.data); populateForm(res.data); }
     }).catch(() => { });
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "applications" && myApps.length === 0) {
+      setAppsLoading(true);
+      api.get("/student/my-applications")
+        .then(res => setMyApps(res.data))
+        .catch(() => { })
+        .finally(() => setAppsLoading(false));
+    }
+  }, [activeTab]);
 
   const populateForm = d => setForm({
     full_name: d.full_name || "",
@@ -136,7 +153,7 @@ export default function StudentDashboard() {
   // ── derived ────────────────────────────────────────────────────────
   const cgpa = parseFloat(profile?.cgpa || 0);
   const cgpaPct = Math.min((cgpa / 10) * 100, 100);
-  const cgpaColor = cgpa >= 7.5 ? "#FFAC41" : cgpa >= 6 ? "#fb923c" : "rgba(255,172,65,0.4)";
+  const cgpaColor = cgpa >= 7.5 ? "#818cf8" : cgpa >= 6 ? "#fb923c" : "rgba(129,140,248,0.4)";
   const verified = profile?.verified_academics;
 
 
@@ -155,8 +172,8 @@ export default function StudentDashboard() {
         <div style={s.pageHeader}>
           <div>
             <p style={s.eyebrow}>STUDENT PORTAL</p>
-            <h1 style={s.pageTitle}>My Profile</h1>
-            <p style={s.pageSub}>Academic data is synced from the institution. Add skills and parse your resume to boost job matching.</p>
+            <h1 style={s.pageTitle}>My Dashboard</h1>
+            <p style={s.pageSub}>Manage your profile, applications, and career journey.</p>
           </div>
           {profile && !editMode && (
             <div style={{ display: "flex", gap: "10px" }}>
@@ -170,13 +187,63 @@ export default function StudentDashboard() {
           )}
         </div>
 
-        {saved && (
-          <div style={s.toast}>
-            <IconCheckCircle size={16} color="#FFAC41" /> Profile saved!
+        {/* TAB SWITCHER */}
+        {profile && !editMode && (
+          <div style={s.tabBar}>
+            <button onClick={() => setActiveTab("profile")}
+              style={{ ...s.tabBtn, ...(activeTab === "profile" ? s.tabBtnActive : {}) }}>
+              My Profile
+            </button>
+            <button onClick={() => setActiveTab("applications")}
+              style={{ ...s.tabBtn, ...(activeTab === "applications" ? s.tabBtnActive : {}) }}>
+              My Applications
+              {myApps.length > 0 && <span style={s.tabCount}>{myApps.length}</span>}
+            </button>
           </div>
         )}
 
-        {profile && !editMode ? (
+        {saved && (
+          <div style={s.toast}>
+            <IconCheckCircle size={16} color="#818cf8" /> Profile saved!
+          </div>
+        )}
+
+        {profile && !editMode && activeTab === "applications" ? (
+          /* ─── MY APPLICATIONS TAB ─── */
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {appsLoading ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)" }}>Loading applications…</div>
+            ) : myApps.length === 0 ? (
+              <div style={s.emptyApps}>
+                <IconBriefcase size={40} color="var(--muted)" />
+                <p>No applications yet — <button onClick={() => navigate("/student/jobs")} style={s.inlineLink}>Browse jobs</button></p>
+              </div>
+            ) : myApps.map(app => (
+              <div key={app.application_id} style={s.appRow}>
+                <div style={s.appLeft}>
+                  <div style={s.appIconBox}>
+                    <IconBriefcase size={18} color="#818cf8" />
+                  </div>
+                  <div>
+                    <p style={s.appJobTitle}>{app.job_title}</p>
+                    <p style={s.appCompany}>{app.company_name}{app.department ? ` · ${app.department}` : ""}</p>
+                    <p style={s.appDate}>Applied {app.applied_at}</p>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  {app.external_link && (
+                    <a href={app.external_link} target="_blank" rel="noreferrer" style={s.appExtLink}>
+                      Apply Link <IconArrowRight size={12} />
+                    </a>
+                  )}
+                  <span style={{ ...s.appStatus, ...getAppStatusStyle(app.status) }}>
+                    {app.status === "APPLIED" ? "Pending" : app.status.charAt(0) + app.status.slice(1).toLowerCase()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : profile && !editMode ? (
           <div style={s.outerGrid}>
             {/* ── LEFT ── */}
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -249,7 +316,7 @@ export default function StudentDashboard() {
               </div>
 
               {/* QUICK ACTIONS */}
-              <div style={{ ...s.card, background: "rgba(255,172,65,0.04)", borderColor: "rgba(255,172,65,0.15)" }}>
+              <div style={{ ...s.card, background: "rgba(129,140,248,0.04)", borderColor: "rgba(129,140,248,0.15)" }}>
                 <p style={s.cardEyebrow}>Quick Actions</p>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   <button onClick={() => navigate("/student/jobs")} style={s.btnPrimary}>
@@ -282,22 +349,31 @@ export default function StudentDashboard() {
               {/* PROJECTS */}
               <div style={s.card}>
                 <p style={s.cardEyebrow}>Projects</p>
-                <ResumeSection text={profile.projects}
-                  emptyMsg="No projects parsed yet — upload your resume below." />
+                <ResumeSection
+                  text={profile.projects}
+                  icon={IconRocket}
+                  emptyMsg="No projects parsed yet — upload your resume below."
+                />
               </div>
 
               {/* INTERNSHIPS */}
               <div style={s.card}>
                 <p style={s.cardEyebrow}>Internships</p>
-                <ResumeSection text={profile.internships}
-                  emptyMsg="No internships parsed yet." />
+                <ResumeSection
+                  text={profile.internships}
+                  icon={IconBriefcase}
+                  emptyMsg="No internships parsed yet."
+                />
               </div>
 
               {/* ACHIEVEMENTS */}
               <div style={s.card}>
                 <p style={s.cardEyebrow}>Achievements &amp; Certifications</p>
-                <ResumeSection text={profile.achievements}
-                  emptyMsg="No achievements parsed yet." />
+                <ResumeSection
+                  text={profile.achievements}
+                  icon={IconStar}
+                  emptyMsg="No achievements parsed yet."
+                />
               </div>
             </div>
           </div>
@@ -306,7 +382,7 @@ export default function StudentDashboard() {
           /* ──────────────── EDIT MODE ──────────────── */
           <div style={s.editCard}>
             <div style={s.editHeader}>
-              <div style={s.editIconBox}><IconEdit size={20} color="#FFAC41" /></div>
+              <div style={s.editIconBox}><IconEdit size={20} color="#818cf8" /></div>
               <div>
                 <h2 style={s.editTitle}>Edit Profile</h2>
                 <p style={s.editSub}>Academic fields are locked — they come from the official spreadsheet.</p>
@@ -451,7 +527,7 @@ export default function StudentDashboard() {
 function EditSection({ title, children, last }) {
   return (
     <div style={{ padding: "22px 28px", borderBottom: last ? "none" : "1px solid var(--border)" }}>
-      <p style={{ color: "#FFAC41", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 14px" }}>
+      <p style={{ color: "#818cf8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 14px" }}>
         {title}
       </p>
       {children}
@@ -459,14 +535,23 @@ function EditSection({ title, children, last }) {
   );
 }
 
-const A = "rgba(255,172,65,";
+const getAppStatusStyle = (status) => {
+  switch (status) {
+    case "SHORTLISTED": return { background: "rgba(34,197,94,0.1)", color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" };
+    case "REJECTED": return { background: "rgba(239,68,68,0.1)", color: "#ef4444", borderColor: "rgba(239,68,68,0.3)" };
+    default: return { background: "rgba(251,191,36,0.1)", color: "#fbbf24", borderColor: "rgba(251,191,36,0.3)" };
+  }
+};
+
+const A = "rgba(129,140,248,";
 const s = {
   page: { maxWidth: "1080px", margin: "0 auto", padding: "36px 24px 80px" },
+
   pageHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px", flexWrap: "wrap", gap: "14px" },
-  eyebrow: { color: "#FFAC41", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", margin: "0 0 8px" },
+  eyebrow: { color: "#818cf8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", margin: "0 0 8px" },
   pageTitle: { color: "var(--text)", fontSize: "30px", fontWeight: 900, letterSpacing: "-0.02em", margin: "0 0 4px" },
   pageSub: { color: "var(--muted)", fontSize: "14px", margin: 0 },
-  toast: { display: "flex", alignItems: "center", gap: "8px", background: `${A}0.1)`, border: `1px solid ${A}0.25)`, color: "#FFAC41", borderRadius: "12px", padding: "12px 16px", marginBottom: "20px", fontSize: "14px", fontWeight: 600, animation: "slideDown 0.3s ease" },
+  toast: { display: "flex", alignItems: "center", gap: "8px", background: `${A}0.1)`, border: `1px solid ${A}0.25)`, color: "#818cf8", borderRadius: "12px", padding: "12px 16px", marginBottom: "20px", fontSize: "14px", fontWeight: 600, animation: "slideDown 0.3s ease" },
 
   outerGrid: { display: "grid", gridTemplateColumns: "270px 1fr", gap: "16px" },
   card: { background: "var(--card)", border: "1px solid var(--border)", borderRadius: "20px", padding: "22px", display: "flex", flexDirection: "column", gap: "10px" },
@@ -477,15 +562,15 @@ const s = {
 
   // Identity
   avatarWrap: { display: "flex", justifyContent: "center" },
-  avatarRing: { width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#FFAC41,#FF3366)", padding: "3px" },
-  avatar: { width: "100%", height: "100%", borderRadius: "50%", background: "var(--card)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900, color: "#FFAC41" },
+  avatarRing: { width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#818cf8,#6366f1)", padding: "3px" },
+  avatar: { width: "100%", height: "100%", borderRadius: "50%", background: "var(--card)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900, color: "#818cf8" },
   profileName: { color: "var(--text)", fontSize: "17px", fontWeight: 800, textAlign: "center", margin: 0 },
-  rollNo: { color: "#FFAC41", fontSize: "11px", fontWeight: 700, textAlign: "center", margin: 0, letterSpacing: "0.06em" },
+  rollNo: { color: "#818cf8", fontSize: "11px", fontWeight: 700, textAlign: "center", margin: 0, letterSpacing: "0.06em" },
   profileDept: { color: "var(--muted)", fontSize: "12px", textAlign: "center", margin: 0 },
-  profileYear: { color: "#FFAC41", fontSize: "12px", fontWeight: 600, textAlign: "center", margin: 0 },
+  profileYear: { color: "#818cf8", fontSize: "12px", fontWeight: 600, textAlign: "center", margin: 0 },
   profileDetail: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "var(--muted)", fontSize: "12px" },
   infoPill: { padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--muted)" },
-  resumeLink: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "#FFAC41", fontWeight: 600, fontSize: "13px", textDecoration: "none" },
+  resumeLink: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "#818cf8", fontWeight: 600, fontSize: "13px", textDecoration: "none" },
   resumeMissing: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "var(--muted)", fontSize: "13px" },
   verifiedBadge: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "#34d399", fontSize: "12px", fontWeight: 600 },
   lockTag: { fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "4px", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" },
@@ -495,7 +580,7 @@ const s = {
   cgpaBig: { fontSize: "38px", fontWeight: 900, lineHeight: 1 },
   cgpaOf: { color: "var(--muted)", fontSize: "13px" },
   track: { height: "5px", background: "var(--border)", borderRadius: "999px", overflow: "hidden" },
-  bar: { height: "100%", borderRadius: "999px", background: "linear-gradient(90deg,#FF3366,#FFAC41)", transition: "width 1s ease" },
+  bar: { height: "100%", borderRadius: "999px", background: "linear-gradient(90deg,#FF3366,#818cf8)", transition: "width 1s ease" },
   acGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px", marginTop: "4px" },
   acCell: { background: "var(--bg)", borderRadius: "9px", padding: "9px", textAlign: "center" },
   acVal: { display: "block", fontSize: "14px", fontWeight: 700, color: "var(--text)" },
@@ -503,14 +588,14 @@ const s = {
 
   // Skills
   skillsWrap: { display: "flex", flexWrap: "wrap", gap: "6px" },
-  skillTag: { padding: "4px 11px", borderRadius: "6px", fontSize: "12px", fontWeight: 600, background: `${A}0.1)`, border: `1px solid ${A}0.25)`, color: "#FFAC41" },
+  skillTag: { padding: "4px 11px", borderRadius: "6px", fontSize: "12px", fontWeight: 600, background: `${A}0.1)`, border: `1px solid ${A}0.25)`, color: "#818cf8" },
 
   // Item cards (projects / internships)
   itemCard: { background: "var(--bg)", borderRadius: "12px", padding: "13px 16px", borderLeft: "3px solid", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "7px" },
   itemIconBox: { width: 28, height: 28, borderRadius: "7px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   itemTitle: { fontSize: "13px", fontWeight: 700, lineHeight: 1.4, whiteSpace: "normal", wordBreak: "break-word" },
   itemDesc: { fontSize: "12px", color: "var(--muted)", margin: "4px 0 0", lineHeight: 1.7 },
-  expandBtn: { background: "none", border: "none", color: "#FFAC41", fontSize: "11px", fontWeight: 600, cursor: "pointer", padding: "4px 0 0", textDecoration: "none", letterSpacing: "0.03em" },
+  expandBtn: { background: "none", border: "none", color: "#818cf8", fontSize: "11px", fontWeight: 600, cursor: "pointer", padding: "4px 0 0", textDecoration: "none", letterSpacing: "0.03em" },
 
   // Achievements
   achBadge: { display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "8px", background: `${A}0.08)`, border: `1px solid ${A}0.2)`, color: "var(--text)", fontSize: "12px", fontWeight: 500 },
@@ -540,13 +625,32 @@ const s = {
   previewLabel: { color: "var(--muted)", fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 },
   errBox: { display: "flex", alignItems: "center", gap: "8px", background: "rgba(248,113,113,0.07)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: "10px", padding: "10px 14px", fontSize: "13px", color: "#f87171" },
 
-  btnPrimary: { width: "auto", padding: "10px 20px", background: "#FFAC41", color: "#000", border: "none", borderRadius: "11px", fontWeight: 700, fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: "7px" },
+  btnPrimary: { width: "auto", padding: "10px 20px", background: "#818cf8", color: "#000", border: "none", borderRadius: "11px", fontWeight: 700, fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: "7px" },
   btnOutline: { width: "auto", padding: "10px 18px", background: "transparent", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "11px", fontWeight: 600, fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: "7px" },
 
+  // Tab switcher
+  tabBar: { display: "flex", gap: "6px", marginBottom: "24px", borderBottom: "1px solid var(--border)", paddingBottom: "0" },
+  tabBtn: { padding: "10px 20px", background: "transparent", border: "none", borderBottom: "2px solid transparent", color: "var(--muted)", fontSize: "14px", fontWeight: 600, cursor: "pointer", marginBottom: "-1px" },
+  tabBtnActive: { color: "#818cf8", borderBottomColor: "#818cf8" },
+  tabCount: { marginLeft: "7px", background: "rgba(129,140,248,0.15)", color: "#818cf8", borderRadius: "99px", fontSize: "11px", fontWeight: 700, padding: "1px 7px" },
+
+  // My Applications list
+  emptyApps: { textAlign: "center", padding: "80px 0", color: "var(--muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", fontSize: "14px" },
+  inlineLink: { background: "none", border: "none", color: "#818cf8", fontWeight: 600, cursor: "pointer", fontSize: "inherit", padding: 0 },
+  appRow: { background: "var(--card)", border: "1px solid var(--border)", borderRadius: "16px", padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
+  appLeft: { display: "flex", gap: "14px", alignItems: "center" },
+  appIconBox: { width: 42, height: 42, borderRadius: "12px", background: `${A}0.1)`, border: `1px solid ${A}0.2)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  appJobTitle: { color: "var(--text)", fontSize: "15px", fontWeight: 700, margin: "0 0 3px" },
+  appCompany: { color: "var(--muted)", fontSize: "13px", margin: "0 0 3px" },
+  appDate: { color: "var(--muted)", fontSize: "12px", margin: 0 },
+  appExtLink: { display: "flex", alignItems: "center", gap: "5px", color: "#818cf8", fontWeight: 600, fontSize: "13px", textDecoration: "none", padding: "6px 12px", border: "1px solid rgba(129,140,248,0.3)", borderRadius: "8px", background: "rgba(129,140,248,0.06)" },
+  appStatus: { padding: "5px 13px", borderRadius: "99px", fontSize: "12px", fontWeight: 700, border: "1px solid" },
+
   // ResumeSection text renderer
-  sectionText: { display: "flex", flexDirection: "column", gap: "2px" },
-  sectionTitle: { fontSize: "13px", fontWeight: 700, color: "#FFAC41", margin: "8px 0 3px", letterSpacing: "0.01em" },
-  bulletRow: { display: "flex", gap: "8px", alignItems: "flex-start" },
-  bulletDot: { color: "#FFAC41", fontWeight: 700, flexShrink: 0, lineHeight: "1.65", fontSize: "13px" },
+  sectionContainer: { display: "flex", flexDirection: "column", gap: "10px" },
+  itemHeader: { display: "flex", gap: "8px", alignItems: "flex-start", marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" },
+  sectionTitle: { fontSize: "14px", fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "0.01em" },
+  bulletRow: { display: "flex", gap: "8px", alignItems: "flex-start", paddingLeft: "22px" },
+  bulletDot: { color: "#818cf8", fontWeight: 700, flexShrink: 0, lineHeight: "1.65", fontSize: "13px" },
   bulletText: { fontSize: "13px", color: "var(--muted)", lineHeight: "1.65", flex: 1 },
 };

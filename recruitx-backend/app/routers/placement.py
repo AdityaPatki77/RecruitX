@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.job import Job
@@ -8,9 +9,13 @@ from app.models.application import Application
 from app.models.student import StudentProfile
 from app.models.user import User, RoleEnum
 from app.core.security import hash_password
+from app.services.email_service import (
+    send_shortlist_email, send_rejection_email, schedule_email_after_business_days
+)
 
 import pandas as pd
 import io
+import csv
 
 router = APIRouter(prefix="/placement", tags=["Placement"])
 
@@ -122,6 +127,10 @@ def get_job_applicants(job_id: int, db: Session = Depends(get_db), user=Depends(
             "roll_no":             student.roll_no,
             "department":          student.department,
             "cgpa":                student.cgpa,
+            "tenth_percent":       student.tenth_percent,
+            "twelfth_percent":     student.twelfth_percent,
+            "backlogs":            student.backlogs or 0,
+            "skills":              student.skills or "",
             "resume_url":          student.resume_url,
             "status":              app.status,
             "match_score":         score,
@@ -146,9 +155,117 @@ def update_application_status(
     application = db.query(Application).filter(Application.id == application_id).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
+
+    old_status = application.status
     application.status = status
     db.commit()
+
+    # ── Auto-schedule email on status change ─────────────────────
+    # Get student + job info for the email
+    student_profile = db.query(StudentProfile).filter(
+        StudentProfile.user_id == application.student_id
+    ).first()
+    student_user = db.query(User).filter(User.id == application.student_id).first()
+    job = db.query(Job).filter(Job.id == application.job_id).first()
+
+    if student_user and student_profile and job and old_status != status:
+        name = student_profile.full_name or student_user.email
+        if status == "SHORTLISTED":
+            # Schedule email after 2 business days automatically
+            schedule_email_after_business_days(
+                2, send_shortlist_email,
+                student_user.email, name, job.title, job.company_name
+            )
+        elif status == "REJECTED":
+            schedule_email_after_business_days(
+                2, send_rejection_email,
+                student_user.email, name, job.title, job.company_name
+            )
+
     return {"message": "Status updated"}
+
+
+# ──────────────────────────────────────────────────────────────────
+# SEND EMAILS NOW — Manual trigger for all shortlisted in a job
+# ──────────────────────────────────────────────────────────────────
+@router.post("/send-shortlist-emails/{job_id}")
+def send_shortlist_emails_now(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(placement_only)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    applications = db.query(Application).filter(
+        Application.job_id == job_id,
+        Application.status == "SHORTLISTED"
+    ).all()
+
+    sent = 0
+    for app in applications:
+        student_profile = db.query(StudentProfile).filter(
+            StudentProfile.user_id == app.student_id
+        ).first()
+        student_user = db.query(User).filter(User.id == app.student_id).first()
+        if student_user and student_profile:
+            name = student_profile.full_name or student_user.email
+            send_shortlist_email(student_user.email, name, job.title, job.company_name)
+            sent += 1
+
+    return {"message": f"Emails sent to {sent} shortlisted student(s)"}
+
+
+# ──────────────────────────────────────────────────────────────────
+# EXPORT SHORTLISTED STUDENTS AS CSV
+# ──────────────────────────────────────────────────────────────────
+@router.get("/export-shortlisted/{job_id}")
+def export_shortlisted_csv(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(placement_only)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    applications = db.query(Application).filter(
+        Application.job_id == job_id,
+        Application.status == "SHORTLISTED"
+    ).all()
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "Name", "Roll No", "Email", "Department",
+        "CGPA", "10th %", "12th %", "Backlogs", "Skills", "Applied At"
+    ])
+    writer.writeheader()
+
+    for app in applications:
+        sp = db.query(StudentProfile).filter(StudentProfile.user_id == app.student_id).first()
+        su = db.query(User).filter(User.id == app.student_id).first()
+        if sp and su:
+            writer.writerow({
+                "Name":       sp.full_name or "",
+                "Roll No":    sp.roll_no or "",
+                "Email":      su.email or "",
+                "Department": sp.department or "",
+                "CGPA":       sp.cgpa or "",
+                "10th %":     sp.tenth_percent or "",
+                "12th %":     sp.twelfth_percent or "",
+                "Backlogs":   sp.backlogs or 0,
+                "Skills":     sp.skills or "",
+                "Applied At": app.applied_at.strftime("%Y-%m-%d") if app.applied_at else "",
+            })
+
+    output.seek(0)
+    filename = f"shortlisted_{job.company_name}_{job.title}.csv".replace(" ", "_")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 # ──────────────────────────────────────────────────────────────────

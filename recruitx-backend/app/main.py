@@ -4,6 +4,8 @@ from app.routers import auth, student, placement
 from app.routers import company, application
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file at startup
 
 Base.metadata.create_all(bind=engine)
 
