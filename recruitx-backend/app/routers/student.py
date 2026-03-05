@@ -648,3 +648,63 @@ def get_my_applications(
             "is_approved":    job.is_approved,
         })
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CHANGE PASSWORD
+# ─────────────────────────────────────────────────────────────────────────────
+from pydantic import BaseModel as PydanticBase
+from app.core.security import verify_password, hash_password as _hash_pw
+
+class ChangePasswordRequest(PydanticBase):
+    old_password: str
+    new_password: str
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not verify_password(payload.old_password, current_user.password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+
+    current_user.password = _hash_pw(payload.new_password)
+    current_user.is_default_password = False
+    db.commit()
+    return {"message": "Password changed successfully"}
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MY APPLICATIONS — full detail for student dashboard tab
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/my-applications")
+def get_my_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    applications = db.query(Application).filter(
+        Application.student_id == current_user.id
+    ).order_by(Application.applied_at.desc()).all()
+
+    result = []
+    for app in applications:
+        job = db.query(Job).filter(Job.id == app.job_id).first()
+        if not job:
+            continue
+        result.append({
+            "application_id": app.id,
+            "job_id":         job.id,
+            "job_title":      job.title,
+            "company_name":   job.company_name,
+            "department":     job.department,
+            "status":         app.status,
+            "applied_at":     app.applied_at.strftime("%d %b %Y") if app.applied_at else "",
+            "external_link":  job.external_link or "",
+            "is_approved":    job.is_approved,
+        })
+    return result

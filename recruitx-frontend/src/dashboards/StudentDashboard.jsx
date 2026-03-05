@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   IconEdit, IconBriefcase, IconUpload, IconCheckCircle,
   IconZap, IconArrowRight, IconDownload, IconShield,
-  IconFileText, IconRocket, IconStar, IconX, IconPhone,
+  IconFileText, IconRocket, IconStar, IconX, IconPhone, IconEyeOff, IconEye,
 } from "../components/Icons";
 
 /* ─── renders a parsed resume section as nicely formatted text ─── */
@@ -75,6 +75,15 @@ export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState("profile"); // "profile" | "applications"
   const [myApps, setMyApps] = useState([]);
   const [appsLoading, setAppsLoading] = useState(false);
+
+  // change password modal
+  const [showPwModal, setShowPwModal] = useState(false);
+  const [pwForm, setPwForm] = useState({ old: "", new_: "", confirm: "" });
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState("");
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
 
   // parser
   const [parseFile, setParseFile] = useState(null);
@@ -156,12 +165,29 @@ export default function StudentDashboard() {
   const cgpaColor = cgpa >= 7.5 ? "#818cf8" : cgpa >= 6 ? "#fb923c" : "rgba(129,140,248,0.4)";
   const verified = profile?.verified_academics;
 
-
   // merged skills (manual + parsed), deduplicated
   const allSkills = [...new Set([
     ...(profile?.skills || "").split(","),
     ...(profile?.parsed_skills || "").split(","),
   ].map(s => s.trim()).filter(Boolean))];
+
+  const submitChangePassword = async (e) => {
+    e.preventDefault();
+    setPwError(""); setPwSuccess("");
+    if (pwForm.new_ !== pwForm.confirm) { setPwError("New passwords do not match."); return; }
+    if (pwForm.new_.length < 6) { setPwError("New password must be at least 6 characters."); return; }
+    setPwLoading(true);
+    try {
+      await api.post("/student/change-password", { old_password: pwForm.old, new_password: pwForm.new_ });
+      setPwSuccess("Password changed successfully! ✅");
+      setPwForm({ old: "", new_: "", confirm: "" });
+      setTimeout(() => { setShowPwModal(false); setPwSuccess(""); }, 1800);
+    } catch (err) {
+      setPwError(err?.response?.data?.detail || "Something went wrong.");
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   return (
     <>
@@ -177,6 +203,9 @@ export default function StudentDashboard() {
           </div>
           {profile && !editMode && (
             <div style={{ display: "flex", gap: "10px" }}>
+              <button onClick={() => setShowPwModal(true)} style={s.btnPw}>
+                <IconShield size={15} /> Change Password
+              </button>
               <button onClick={() => setEditMode(true)} style={s.btnOutline}>
                 <IconEdit size={15} /> Edit Profile
               </button>
@@ -186,6 +215,15 @@ export default function StudentDashboard() {
             </div>
           )}
         </div>
+
+        {/* DEFAULT PASSWORD WARNING BANNER */}
+        {profile?.is_default_password !== false && (
+          <div style={s.defaultPwBanner}>
+            <IconShield size={16} color="#f59e0b" />
+            <span>You are using a <strong>default password</strong>. Please change it to secure your account.</span>
+            <button onClick={() => setShowPwModal(true)} style={s.bannerBtn}>Change Now →</button>
+          </div>
+        )}
 
         {/* TAB SWITCHER */}
         {profile && !editMode && (
@@ -518,11 +556,76 @@ export default function StudentDashboard() {
             </div>
           </div>
         )}
-      </div >
+      </div>
+
+      {/* ── CHANGE PASSWORD MODAL ── */}
+      {showPwModal && (
+        <div style={s.modalOverlay} onClick={() => { setShowPwModal(false); setPwError(""); setPwSuccess(""); }}>
+          <div style={s.pwModal} onClick={e => e.stopPropagation()}>
+            <div style={s.pwModalHeader}>
+              <div>
+                <p style={{ color: "#818cf8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", margin: "0 0 4px" }}>ACCOUNT SECURITY</p>
+                <h2 style={{ color: "var(--text)", fontSize: "20px", fontWeight: 800, margin: 0 }}>Change Password</h2>
+              </div>
+              <button onClick={() => { setShowPwModal(false); setPwError(""); setPwSuccess(""); }} style={s.pwClose}>
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={submitChangePassword} style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Current Password */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Current Password</label>
+                <div style={s.pwInputWrap}>
+                  <input type={showOld ? "text" : "password"} style={{ ...s.fieldInput, paddingRight: "44px" }}
+                    placeholder="Enter current password" value={pwForm.old}
+                    onChange={e => setPwForm(f => ({ ...f, old: e.target.value }))} />
+                  <button type="button" onClick={() => setShowOld(v => !v)} style={s.eyeBtn}>
+                    {showOld ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>New Password</label>
+                <div style={s.pwInputWrap}>
+                  <input type={showNew ? "text" : "password"} style={{ ...s.fieldInput, paddingRight: "44px" }}
+                    placeholder="At least 6 characters" value={pwForm.new_}
+                    onChange={e => setPwForm(f => ({ ...f, new_: e.target.value }))} />
+                  <button type="button" onClick={() => setShowNew(v => !v)} style={s.eyeBtn}>
+                    {showNew ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div style={s.field}>
+                <label style={s.fieldLabel}>Confirm New Password</label>
+                <input type="password" style={s.fieldInput}
+                  placeholder="Repeat new password" value={pwForm.confirm}
+                  onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} />
+              </div>
+
+              {pwError && <div style={s.pwErr}>{pwError}</div>}
+              {pwSuccess && <div style={s.pwOk}>{pwSuccess}</div>}
+
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", paddingTop: "4px" }}>
+                <button type="button" onClick={() => { setShowPwModal(false); setPwError(""); }} style={s.btnOutline}>Cancel</button>
+                <button type="submit" disabled={pwLoading} style={{ ...s.btnPrimary, opacity: pwLoading ? 0.7 : 1 }}>
+                  {pwLoading ? "Saving…" : "Change Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <style>{`@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </>
   );
 }
+
 
 function EditSection({ title, children, last }) {
   return (
@@ -653,4 +756,18 @@ const s = {
   bulletRow: { display: "flex", gap: "8px", alignItems: "flex-start", paddingLeft: "22px" },
   bulletDot: { color: "#818cf8", fontWeight: 700, flexShrink: 0, lineHeight: "1.65", fontSize: "13px" },
   bulletText: { fontSize: "13px", color: "var(--muted)", lineHeight: "1.65", flex: 1 },
+
+  // Change Password
+  btnPw: { width: "auto", padding: "10px 18px", background: "transparent", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.35)", borderRadius: "11px", fontWeight: 600, fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: "7px" },
+  defaultPwBanner: { display: "flex", alignItems: "center", gap: "12px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: "14px", padding: "13px 18px", marginBottom: "20px", fontSize: "14px", color: "#f59e0b", flexWrap: "wrap" },
+  bannerBtn: { marginLeft: "auto", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b", padding: "6px 14px", borderRadius: "8px", fontWeight: 700, fontSize: "13px", cursor: "pointer" },
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "20px" },
+  pwModal: { background: "var(--card)", border: "1px solid var(--border)", borderRadius: "20px", width: "100%", maxWidth: "440px", animation: "slideDown 0.2s ease" },
+  pwModalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "22px 24px", borderBottom: "1px solid var(--border)" },
+  pwClose: { background: "none", border: "none", color: "var(--muted)", cursor: "pointer", display: "flex", padding: "4px" },
+  pwInputWrap: { position: "relative", display: "flex", alignItems: "center" },
+  eyeBtn: { position: "absolute", right: "12px", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", display: "flex", padding: 0 },
+  pwErr: { background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171", borderRadius: "10px", padding: "10px 14px", fontSize: "13px" },
+  pwOk: { background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399", borderRadius: "10px", padding: "10px 14px", fontSize: "13px", fontWeight: 600 },
 };
+
