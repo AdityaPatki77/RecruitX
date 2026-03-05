@@ -181,6 +181,8 @@ export default function StudentDashboard() {
       await api.post("/student/change-password", { old_password: pwForm.old, new_password: pwForm.new_ });
       setPwSuccess("Password changed successfully! ✅");
       setPwForm({ old: "", new_: "", confirm: "" });
+      // Hide the banner immediately by updating local profile state
+      setProfile(prev => prev ? { ...prev, is_default_password: false } : prev);
       setTimeout(() => { setShowPwModal(false); setPwSuccess(""); }, 1800);
     } catch (err) {
       setPwError(err?.response?.data?.detail || "Something went wrong.");

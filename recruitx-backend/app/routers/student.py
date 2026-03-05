@@ -45,13 +45,18 @@ def create_or_update_profile(
 # ─────────────────────────────────────────────────────────────────────────────
 # GET PROFILE
 # ─────────────────────────────────────────────────────────────────────────────
-@router.get("/profile", response_model=StudentResponse)
+@router.get("/profile")
 def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(StudentProfile) \
-        .filter(StudentProfile.user_id == current_user.id).first()
+    p = db.query(StudentProfile).filter(StudentProfile.user_id == current_user.id).first()
+    if not p:
+        return None
+    # Convert to dict and inject is_default_password from User table
+    data = {c.name: getattr(p, c.name) for c in p.__table__.columns}
+    data["is_default_password"] = current_user.is_default_password
+    return data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
